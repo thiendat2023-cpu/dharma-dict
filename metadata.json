@@ -1,0 +1,6 @@
+{
+  "name": "Tra cứu Anh văn Phật pháp",
+  "description": "Ứng dụng tra cứu thuật ngữ Anh văn Phật pháp, dịch thuật đoạn văn kinh điển và đối chiếu thuật ngữ Pali - Anh chuyên sâu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

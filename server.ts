@@ -1,6 +1,6 @@
 import express, { Request, Response } from 'express';
 import { GoogleGenAI, Type } from '@google/genai';
-import { kv } from '@vercel/kv';
+import Redis from 'ioredis';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -17,8 +17,25 @@ app.use(express.json());
 
 const apiKey = process.env.GEMINI_API_KEY || '';
 
-// Cầu dao tự động: Chỉ kích hoạt bộ nhớ đệm khi đã có đủ biến môi trường KV
-const isKVCacheEnabled = Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+// =========================================================================
+// CẤU HÌNH REDIS ĐỒNG BỘ VỚI REDIS_URL CỦA VERCEL
+// =========================================================================
+const redisUrl = process.env.REDIS_URL || '';
+const isRedisEnabled = Boolean(redisUrl);
+
+let redis: Redis | null = null;
+if (isRedisEnabled) {
+  try {
+    redis = new Redis(redisUrl);
+    redis.on('error', (err) => console.error('Redis Client Error:', err));
+    console.log('Đã kết nối kho Redis thành công!');
+  } catch (err) {
+    console.error('Lỗi khởi tạo Redis:', err);
+    redis = null;
+  }
+} else {
+  console.log('Chưa cấu hình REDIS_URL, tạm thời tắt chức năng lưu trữ 0 đồng.');
+}
 
 const ai = new GoogleGenAI({
   apiKey,
@@ -29,7 +46,6 @@ const ai = new GoogleGenAI({
   },
 });
 
-// Đưa mô hình chủ lực hoạt động ổn định nhất lên vị trí đầu tiên để tránh lỗi 404
 const candidateModels = ['gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
 
 async function generateWithFallback(
@@ -100,7 +116,7 @@ const wordTableSchema = {
 };
 
 // =========================================================================
-// RÀNG BUỘC THUẬT NGỮ PHẬT HỌC CHUYÊN NGÀNH
+// RÀNG BUỘC CỰC KỲ NGHIÊM NGẶT VỀ THUẬT NGỮ PHẬT HỌC CHUYÊN NGÀNH
 // =========================================================================
 const BUDDHIST_TERMINOLOGY_MANDATE = `
 QUY CHUẨN HỌC THUẬT BẮT BUỘC VỀ THUẬT NGỮ ANH VĂN PHẬT PHÁP (BUDDHIST TERMINOLOGY MANDATE):
@@ -128,7 +144,6 @@ async function handleBuddhistHubRequest(req: Request, res: Response) {
 
     const cleanInput = input.trim();
 
-    // Mapping legacy modes
     let activeMode = mode;
     if (activeMode === 'pali-to-vi') activeMode = 'eng-to-vi';
     else if (activeMode === 'vi-to-pali') activeMode = 'vi-to-eng';
@@ -137,13 +152,13 @@ async function handleBuddhistHubRequest(req: Request, res: Response) {
 
     const cacheKey = `eng_${activeMode}_${cleanInput.toLowerCase()}`;
 
-    // Lưới lọc kiểm tra bộ nhớ đệm nếu đã cấu hình KV
-    if (isKVCacheEnabled) {
+    // ĐỌC DỮ LIỆU TỪ KHO (NẾU CÓ)
+    if (isRedisEnabled && redis) {
       try {
-        const cachedData = await kv.get(cacheKey);
-        if (cachedData) {
+        const cachedDataStr = await redis.get(cacheKey);
+        if (cachedDataStr) {
           console.log('⚡ Đã lấy từ kho lưu trữ 0 đồng:', cacheKey);
-          res.json({ mode: activeMode, data: cachedData });
+          res.json({ mode: activeMode, data: JSON.parse(cachedDataStr) });
           return;
         }
       } catch (e) {
@@ -395,9 +410,10 @@ NỘI DUNG ĐỐI CHIẾU BẮT BUỘC:
 
     const finalData = JSON.parse(resultText);
 
-    if (isKVCacheEnabled) {
+    // LƯU KẾT QUẢ VÀO KHO
+    if (isRedisEnabled && redis) {
       try {
-        await kv.set(cacheKey, finalData);
+        await redis.set(cacheKey, JSON.stringify(finalData));
       } catch (e) {
         console.warn('Lỗi lưu kho:', e);
       }
@@ -411,13 +427,9 @@ NỘI DUNG ĐỐI CHIẾU BẮT BUỘC:
   }
 }
 
-// Router chính
 app.post('/api/buddhist-hub', handleBuddhistHubRequest);
-
-// Backward compatibility cho /api/pali-hub
 app.post('/api/pali-hub', handleBuddhistHubRequest);
 
-// Legacy backward-compatible endpoint
 app.post('/api/analyze-pali', async (req: Request, res: Response) => {
   try {
     const { word } = req.body;
@@ -444,7 +456,6 @@ app.post('/api/analyze-pali', async (req: Request, res: Response) => {
   }
 });
 
-// Mounting Vite in development or static in production
 if (process.env.NODE_ENV !== 'production') {
   const { createServer } = await import('vite');
   const vite = await createServer({

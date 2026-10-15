@@ -17,7 +17,7 @@ app.use(express.json());
 
 const apiKey = process.env.GEMINI_API_KEY || '';
 
-// Tự động kiểm tra xem Vercel KV đã được cấu hình biến môi trường chưa
+// Cầu dao tự động: Chỉ kích hoạt bộ nhớ đệm khi đã có đủ biến môi trường KV
 const isKVCacheEnabled = Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
 
 const ai = new GoogleGenAI({
@@ -29,7 +29,8 @@ const ai = new GoogleGenAI({
   },
 });
 
-const candidateModels = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-3.8-flash'];
+// Đưa mô hình chủ lực hoạt động ổn định nhất lên vị trí đầu tiên để tránh lỗi 404
+const candidateModels = ['gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
 
 async function generateWithFallback(
   prompt: string,
@@ -99,8 +100,7 @@ const wordTableSchema = {
 };
 
 // =========================================================================
-// RÀNG BUỘC CỰC KỲ NGHIÊM NGẶT VỀ THUẬT NGỮ PHẬT HỌC CHUYÊN NGÀNH
-// (BUDDHIST TERMINOLOGY STRICT MANDATE & PHILOSOPHICAL FRAMEWORK)
+// RÀNG BUỘC THUẬT NGỮ PHẬT HỌC CHUYÊN NGÀNH
 // =========================================================================
 const BUDDHIST_TERMINOLOGY_MANDATE = `
 QUY CHUẨN HỌC THUẬT BẮT BUỘC VỀ THUẬT NGỮ ANH VĂN PHẬT PHÁP (BUDDHIST TERMINOLOGY MANDATE):
@@ -128,38 +128,36 @@ async function handleBuddhistHubRequest(req: Request, res: Response) {
 
     const cleanInput = input.trim();
 
-    // Mapping legacy modes to new Buddhist English modes if passed
+    // Mapping legacy modes
     let activeMode = mode;
     if (activeMode === 'pali-to-vi') activeMode = 'eng-to-vi';
     else if (activeMode === 'vi-to-pali') activeMode = 'vi-to-eng';
     else if (activeMode === 'sentence-pali-to-vi') activeMode = 'sentence-eng-to-vi';
     else if (activeMode === 'sentence-vi-to-pali') activeMode = 'compare-eng-pali';
 
-    const cacheKey = \`eng_\${activeMode}_\${cleanInput.toLowerCase()}\`;
+    const cacheKey = `eng_${activeMode}_${cleanInput.toLowerCase()}`;
 
-    // LƯỚI LỌC 0 ĐỒNG TỰ ĐỘNG BẢO VỆ (CHỈ CHẠY KHI ĐÃ CẤU HÌNH ĐỦ BIẾN MÔI TRƯỜNG)
+    // Lưới lọc kiểm tra bộ nhớ đệm nếu đã cấu hình KV
     if (isKVCacheEnabled) {
       try {
         const cachedData = await kv.get(cacheKey);
         if (cachedData) {
           console.log('⚡ Đã lấy từ kho lưu trữ 0 đồng:', cacheKey);
           res.json({ mode: activeMode, data: cachedData });
-          return; // Dừng lại, bốc dữ liệu ra ngay
+          return;
         }
       } catch (e) {
         console.warn('Lỗi đọc kho (vẫn tiếp tục gọi AI):', e);
       }
-    } else {
-      console.log('Chưa tìm thấy biến môi trường KV, tạm thời gọi trực tiếp AI.');
     }
 
     let resultText = '';
 
     // TAB 1: Tra từ Anh - Việt (Phật pháp)
     if (activeMode === 'eng-to-vi') {
-      const systemInstruction = \`Bạn là đại học giả uyên bác về Ngôn ngữ Anh Phật học (Buddhist English Philology) và Phạn - Pāḷi học. Khi người dùng nhập một thuật ngữ hoặc từ tiếng Anh Phật giáo, hãy phân tích cực kỳ gãy gọn, chuẩn xác và mang tầm vóc học thuật kinh viện theo 4 ý chính:
+      const systemInstruction = `Bạn là đại học giả uyên bác về Ngôn ngữ Anh Phật học (Buddhist English Philology) và Phạn - Pāḷi học. Khi người dùng nhập một thuật ngữ hoặc từ tiếng Anh Phật giáo, hãy phân tích cực kỳ gãy gọn, chuẩn xác và mang tầm vóc học thuật kinh viện theo 4 ý chính:
 
-\${BUDDHIST_TERMINOLOGY_MANDATE}
+${BUDDHIST_TERMINOLOGY_MANDATE}
 
 CẤU TRÚC 4 Ý PHÂN TÍCH:
 1. Từ gốc & Từ loại: Gốc từ tiếng Anh/La-tinh, từ loại tiếng Anh, thuật ngữ Pāḷi/Sanskrit tương đương chuẩn xác nhất (kèm ngữ căn).
@@ -169,7 +167,7 @@ CẤU TRÚC 4 Ý PHÂN TÍCH:
 
 QUY TẮC CỘT TRONG BẢNG (tableData.rows):
 Cột 'caseOrPerson' BẮT BUỘC ghi bằng TIẾNG VIỆT có số thứ tự:
-1. Danh từ chính (Noun), 2. Tính từ (Adjective), 3. Động từ liên hệ (Verb), 4. Trạng từ (Adverb), 5. Thuật ngữ Pāḷi đối ứng (Pāli Term)...\`;
+1. Danh từ chính (Noun), 2. Tính từ (Adjective), 3. Động từ liên hệ (Verb), 4. Trạng từ (Adverb), 5. Thuật ngữ Pāḷi đối ứng (Pāli Term)...`;
 
       const responseSchema = {
         type: Type.OBJECT,
@@ -182,7 +180,7 @@ Cột 'caseOrPerson' BẮT BUỘC ghi bằng TIẾNG VIỆT có số thứ tự:
               base: { type: Type.STRING, description: 'Dạng từ nguyên mẫu' },
               wordType: { type: Type.STRING, description: 'Từ loại tiếng Anh học thuật' },
               paliEquivalent: { type: Type.STRING, description: 'Thuật ngữ Pāḷi tương đương' },
-              genderOrClass: { type: Type.STRING, description: 'Phân loại ngữ pháp' },
+              genderOrClass: { type: Type.STRING },
               etymologyNote: { type: Type.STRING, description: 'Ghi chú từ nguyên & ngữ cảnh giáo lý sâu sắc' },
             },
             required: ['root', 'base', 'wordType'],
@@ -217,7 +215,7 @@ Cột 'caseOrPerson' BẮT BUỘC ghi bằng TIẾNG VIỆT có số thứ tự:
       };
 
       resultText = await generateWithFallback(
-        \`Thuật ngữ tiếng Anh Phật giáo: "\${cleanInput}"\`,
+        `Thuật ngữ tiếng Anh Phật giáo: "${cleanInput}"`,
         systemInstruction,
         responseSchema
       );
@@ -225,9 +223,9 @@ Cột 'caseOrPerson' BẮT BUỘC ghi bằng TIẾNG VIỆT có số thứ tự:
 
     // TAB 2: Tra từ Việt - Anh (Phật pháp)
     else if (activeMode === 'vi-to-eng') {
-      const systemInstruction = \`Bạn là chuyên gia hàng đầu về dịch thuật kinh điển Phật học song ngữ Việt - Anh. Khi người dùng nhập một thuật ngữ Phật học tiếng Việt (hoặc Hán - Việt), hãy tra cứu thuật ngữ tiếng Anh chuẩn xác nhất và phân tích gãy gọn theo 3 ý chính:
+      const systemInstruction = `Bạn là chuyên gia hàng đầu về dịch thuật kinh điển Phật học song ngữ Việt - Anh. Khi người dùng nhập một thuật ngữ Phật học tiếng Việt (hoặc Hán - Việt), hãy tra cứu thuật ngữ tiếng Anh chuẩn xác nhất và phân tích gãy gọn theo 3 ý chính:
 
-\${BUDDHIST_TERMINOLOGY_MANDATE}
+${BUDDHIST_TERMINOLOGY_MANDATE}
 
 CẤU TRÚC 3 Ý PHÂN TÍCH:
 1. Thuật ngữ tiếng Anh chuẩn xác nhất: TUYỆT ĐỐI dùng thuật ngữ chuyên ngành kinh điển (ví dụ: "chánh niệm" -> "Mindfulness / Sati", "vô ngã" -> "Non-self / Anattā", "duyên khởi" -> "Dependent Origination / Paṭiccasamuppāda"), kèm từ Pāḷi/Sanskrit gốc. Cấm dùng từ ngữ thế tục.
@@ -236,7 +234,7 @@ CẤU TRÚC 3 Ý PHÂN TÍCH:
 
 QUY TẮC CỘT TRONG BẢNG (tableData.rows):
 Cột 'caseOrPerson' BẮT BUỘC ghi bằng TIẾNG VIỆT có số thứ tự:
-1. Thuật ngữ thông dụng nhất trong kinh văn, 2. Bản dịch của Bhikkhu Bodhi, 3. Bản dịch của PTS (Pali Text Society), 4. Bản dịch của Edward Conze / Thiền học, 5. Thuật ngữ triết học phương Tây tương đương...\`;
+1. Thuật ngữ thông dụng nhất trong kinh văn, 2. Bản dịch của Bhikkhu Bodhi, 3. Bản dịch của PTS (Pali Text Society), 4. Bản dịch của Edward Conze / Thiền học, 5. Thuật ngữ triết học phương Tây tương đương...`;
 
       const responseSchema = {
         type: Type.OBJECT,
@@ -284,7 +282,7 @@ Cột 'caseOrPerson' BẮT BUỘC ghi bằng TIẾNG VIỆT có số thứ tự:
       };
 
       resultText = await generateWithFallback(
-        \`Thuật ngữ tiếng Việt Phật pháp: "\${cleanInput}"\`,
+        `Thuật ngữ tiếng Việt Phật pháp: "${cleanInput}"`,
         systemInstruction,
         responseSchema
       );
@@ -292,9 +290,9 @@ Cột 'caseOrPerson' BẮT BUỘC ghi bằng TIẾNG VIỆT có số thứ tự:
 
     // TAB 3: Phân tích & Dịch đoạn văn Anh - Việt
     else if (activeMode === 'sentence-eng-to-vi') {
-      const systemInstruction = \`Bạn là đại học giả phân tích cú pháp và dịch thuật Anh văn Phật học kinh điển (Buddhist Canon & Sutta Studies). 
+      const systemInstruction = `Bạn là đại học giả phân tích cú pháp và dịch thuật Anh văn Phật học kinh điển (Buddhist Canon & Sutta Studies). 
 
-\${BUDDHIST_TERMINOLOGY_MANDATE}
+${BUDDHIST_TERMINOLOGY_MANDATE}
 
 BẮT BUỘC kết quả phân tích từng từ/cụm từ trong câu phải có đầy đủ 3 lớp dữ liệu:
 1. [Từ / Cụm từ tiếng Anh]: Từ/cụm từ trong câu (nguyên dạng đang phân tích).
@@ -302,7 +300,7 @@ BẮT BUỘC kết quả phân tích từng từ/cụm từ trong câu phải c�
 3. [Giải phẫu ngữ pháp chi tiết]:
  - Ký hiệu viết tắt cú pháp: ví dụ (n, subj), (v, past-part), (adj, pred), (prep-phr), (rel-pron)...
  - Giải nghĩa chi tiết về chức năng cú pháp, liên hệ trực tiếp đến thuật ngữ Pāḷi/Sanskrit gốc nếu từ đó mang nội hàm giáo lý trọng tâm.
-Cuối cùng xuất ra: "=> [Bản dịch tiếng Việt mượt mà hoàn chỉnh của toàn đoạn, bảo đảm văn phong thanh tịnh, tôn nghiêm, chuẩn mực kinh tạng Phật giáo (tương đương văn phong HT. Thích Minh Châu)]".\`;
+Cuối cùng xuất ra: "=> [Bản dịch tiếng Việt mượt mà hoàn chỉnh của toàn đoạn, bảo đảm văn phong thanh tịnh, tôn nghiêm, chuẩn mực kinh tạng Phật giáo (tương đương văn phong HT. Thích Minh Châu)]".`;
 
       const responseSchema = {
         type: Type.OBJECT,
@@ -328,7 +326,7 @@ Cuối cùng xuất ra: "=> [Bản dịch tiếng Việt mượt mà hoàn chỉ
       };
 
       resultText = await generateWithFallback(
-        \`Đoạn văn tiếng Anh Phật học: "\${cleanInput}"\`,
+        `Đoạn văn tiếng Anh Phật học: "${cleanInput}"`,
         systemInstruction,
         responseSchema
       );
@@ -336,16 +334,16 @@ Cuối cùng xuất ra: "=> [Bản dịch tiếng Việt mượt mà hoàn chỉ
 
     // TAB 4: So sánh thuật ngữ (Anh - Pāḷi)
     else if (activeMode === 'compare-eng-pali') {
-      const systemInstruction = \`Bạn là nhà ngữ văn học đối chiếu Phật giáo chuyên sâu (Pāli Philology & English Translation Studies). Hãy so sánh sâu sắc giữa thuật ngữ tiếng Anh và nguyên tác Pāḷi (kèm thuật ngữ Hán - Việt tương ứng):
+      const systemInstruction = `Bạn là nhà ngữ văn học đối chiếu Phật giáo chuyên sâu (Pāli Philology & English Translation Studies). Hãy so sánh sâu sắc giữa thuật ngữ tiếng Anh và nguyên tác Pāḷi (kèm thuật ngữ Hán - Việt tương ứng):
 
-\${BUDDHIST_TERMINOLOGY_MANDATE}
+${BUDDHIST_TERMINOLOGY_MANDATE}
 
 NỘI DUNG ĐỐI CHIẾU BẮT BUỘC:
 1. Phân tích nguyên ngữ Pāḷi: ngữ căn (root), tiền tố, tiếp vĩ ngữ, ý nghĩa gốc trong Tam tạng Pāḷi (Tipiṭaka).
 2. Cách các đại học giả phương Tây (T.W. Rhys Davids, Bhikkhu Bodhi, I.B. Horner, Nyanatiloka, Thanissaro Bhikkhu...) dịch sang tiếng Anh.
 3. So sánh ngữ nghĩa (Semantic comparison): Thuật ngữ tiếng Anh lột tả được khía cạnh nào và làm lu mờ hoặc sai lệch (semantic loss/distortion) khía cạnh triết học nào so với Pāḷi gốc (ví dụ: Dukkha dịch là "Suffering" thường bị hiểu hẹp theo tâm lý học thế tục mà mất đi tầng nghĩa "bất toàn, biến hoại của các hành hữu vi"; Sati dịch là "Mindfulness" đôi khi bị tách rời khỏi Chánh định và Chánh kiến trong Bát Chánh Đạo).
 4. Bảng các điểm so sánh chính (comparisonPoints).
-5. Trích dẫn câu kinh văn điển hình song ngữ (Pāḷi - Anh - Việt) minh họa.\`;
+5. Trích dẫn câu kinh văn điển hình song ngữ (Pāḷi - Anh - Việt) minh họa.`;
 
       const responseSchema = {
         type: Type.OBJECT,
@@ -384,23 +382,22 @@ NỘI DUNG ĐỐI CHIẾU BẮT BUỘC:
       };
 
       resultText = await generateWithFallback(
-        \`Thuật ngữ cần so sánh Anh - Pāḷi: "\${cleanInput}"\`,
+        `Thuật ngữ cần so sánh Anh - Pāḷi: "${cleanInput}"`,
         systemInstruction,
         responseSchema
       );
     }
-    
+
     else {
-      res.status(400).json({ error: \`Chế độ không hợp lệ: \${mode}\` });
+      res.status(400).json({ error: `Chế độ không hợp lệ: ${mode}` });
       return;
     }
 
     const finalData = JSON.parse(resultText);
 
-    // BƯỚC KHÓA ĐUÔI CÓ KIỂM TRA ĐIỀU KIỆN
     if (isKVCacheEnabled) {
       try {
-        await kv.set(cacheKey, finalData); // Lưu vĩnh viễn vào Vercel KV
+        await kv.set(cacheKey, finalData);
       } catch (e) {
         console.warn('Lỗi lưu kho:', e);
       }
@@ -428,7 +425,7 @@ app.post('/api/analyze-pali', async (req: Request, res: Response) => {
       res.status(400).json({ error: 'Thiếu từ cần tra.' });
       return;
     }
-    const response = await fetch(\`http://localhost:\${port}/api/buddhist-hub\`, {
+    const response = await fetch(`http://localhost:${port}/api/buddhist-hub`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode: 'eng-to-vi', input: word }),
@@ -463,6 +460,5 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 app.listen(port, () => {
-  console.log(\`Server Tra Cứu Anh Văn Phật Pháp running on port \${port}\`);
+  console.log(`Server Tra Cứu Anh Văn Phật Pháp running on port ${port}`);
 });
-

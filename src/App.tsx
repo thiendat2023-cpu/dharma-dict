@@ -127,6 +127,11 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Thêm state cho bộ đếm & trending searches từ Vercel KV
+  const [pageViews, setPageViews] = useState<number | string>('...');
+  const [searchCount, setSearchCount] = useState<number | string>('...');
+  const [trendingSearches, setTrendingSearches] = useState<string[]>([]);
+
   // Results state for each tab
   const [engToViResult, setEngToViResult] = useState<EngWordAnalysisResult | null>(null);
   const [viToEngResult, setViToEngResult] = useState<ViToEngAnalysisResult | null>(null);
@@ -141,6 +146,22 @@ export default function App() {
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
 
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+
+  // Load thông số bộ đếm & trending searches từ API
+  useEffect(() => {
+    fetch('/api/stats')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data) {
+          setPageViews(data.views || 0);
+          setSearchCount(data.searches || 0);
+          if (data.trending && Array.isArray(data.trending)) {
+            setTrendingSearches(data.trending);
+          }
+        }
+      })
+      .catch((err) => console.error("Lỗi tải thông số API:", err));
+  }, []);
 
   // Load history on mount (giới hạn 10 mục FIFO)
   useEffect(() => {
@@ -237,6 +258,9 @@ export default function App() {
       ].slice(0, MAX_HISTORY_ITEMS);
 
       saveHistory(nextHistory);
+
+      // Tăng biến đếm số từ đã tra trên giao diện
+      setSearchCount((prev) => (typeof prev === 'number' ? prev + 1 : prev));
     } catch (err: any) {
       console.error('Lỗi khi gọi API:', err);
       setError(err?.message || 'Không thể thực hiện yêu cầu. Vui lòng thử lại.');
@@ -357,244 +381,4 @@ export default function App() {
                     }`}
                   >
                     <TabIcon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-amber-400' : 'text-stone-500'}`} />
-                    <span className="sm:hidden text-center truncate">{tab.shortLabel}</span>
-                    <span className="hidden sm:inline">{tab.label}</span>
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-6 md:px-8 py-6 space-y-6 sm:space-y-8 relative z-10">
-        {/* INPUT BOX */}
-        <section className="bg-[#14161f]/80 border border-amber-900/30 rounded-2xl p-4 sm:p-6 shadow-xl backdrop-blur-sm space-y-4">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSubmit();
-            }}
-            className="space-y-3"
-          >
-            <div className="flex flex-col sm:flex-row gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-stone-400 pointer-events-none" />
-
-                {isSentenceMode ? (
-                  <textarea
-                    ref={inputRef as React.RefObject<HTMLTextAreaElement>}
-                    rows={2}
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    placeholder={currentTabConfig.placeholder}
-                    className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-stone-950/80 border border-stone-800 text-stone-100 placeholder:text-stone-500 text-sm sm:text-base focus:outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/40 transition-all resize-none"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                        e.preventDefault();
-                        handleSubmit();
-                      }
-                    }}
-                    autoFocus
-                  />
-                ) : (
-                  <input
-                    ref={inputRef as React.RefObject<HTMLInputElement>}
-                    type="text"
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    placeholder={currentTabConfig.placeholder}
-                    className="w-full pl-10 pr-10 py-3 rounded-xl bg-stone-950/80 border border-stone-800 text-stone-100 placeholder:text-stone-500 text-base sm:text-lg focus:outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/40 transition-all"
-                    autoFocus
-                  />
-                )}
-
-                {inputText && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInputText('');
-                      inputRef.current?.focus();
-                    }}
-                    className="absolute right-3 top-3.5 p-1 text-stone-400 hover:text-stone-200 rounded"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading || !inputText.trim()}
-                className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-stone-950 font-semibold text-sm transition-all shadow-md shadow-amber-900/20 self-stretch sm:self-auto cursor-pointer"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Đang xử lý...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    <span>{currentTabConfig.buttonText}</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-
-          {/* Presets based on active tab */}
-          {PRESETS[activeTab] && PRESETS[activeTab].length > 0 && (
-            <div className="pt-2 border-t border-stone-800/70">
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-stone-400 font-medium flex items-center gap-1">
-                  <Flame className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Gợi ý mẫu:</span>
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {PRESETS[activeTab].map((preset, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleSubmit(preset.text)}
-                      disabled={loading}
-                      className="px-2.5 py-1 rounded-md bg-stone-900/90 hover:bg-amber-600/20 hover:text-amber-200 text-stone-300 border border-stone-800 hover:border-amber-500/40 text-xs transition-colors cursor-pointer"
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* Loading Indicator */}
-        {loading && (
-          <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
-            <div className="relative">
-              <div className="w-12 h-12 rounded-full border-2 border-amber-600/20 border-t-amber-500 animate-spin" />
-              <div className="absolute inset-0 flex items-center justify-center text-amber-400 font-bold text-sm">
-                ☸
-              </div>
-            </div>
-            <p className="font-pali text-base text-amber-200 font-medium">
-              {activeTab === 'eng-to-vi' && 'Đang bóc tách 4 ý ngữ pháp & thuật ngữ Anh văn Phật pháp...'}
-              {activeTab === 'vi-to-eng' && 'Đang tra cứu thuật ngữ Anh văn tương ứng & phân tích 3 ý...'}
-              {activeTab === 'sentence-eng-to-vi' && 'Đang phân tích cú pháp từng từ & dịch đoạn văn...'}
-              {activeTab === 'compare-eng-pali' && 'Đang đối chiếu chuyên sâu thuật ngữ Anh ngữ và nguyên tác Pāḷi...'}
-            </p>
-            <p className="text-xs text-stone-400 max-w-md">
-              Hệ thống xử lý bám sát văn bản kinh tạng và chuẩn mực dịch thuật Phật học quốc tế.
-            </p>
-          </div>
-        )}
-
-        {/* Error Alert */}
-        {error && !loading && (
-          <div className="p-4 rounded-xl bg-red-950/40 border border-red-800/60 text-red-200 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-            <div className="flex-1 text-xs sm:text-sm">
-              <h4 className="font-semibold text-red-300">Không thể hoàn tất yêu cầu</h4>
-              <p className="mt-1 text-red-300/80 leading-relaxed">{error}</p>
-              <button
-                onClick={() => handleSubmit()}
-                className="mt-2.5 px-3 py-1 rounded bg-red-900/60 hover:bg-red-800/80 text-red-100 text-xs font-medium transition-colors"
-              >
-                Thử lại
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* RESULT RENDERERS BASED ON ACTIVE TAB */}
-        {!loading && (
-          <>
-            {activeTab === 'eng-to-vi' && engToViResult && (
-              <EngWordAnalysisResultView
-                data={engToViResult}
-                isBookmarked={isCurrentBookmarked}
-                onToggleBookmark={toggleBookmarkCurrent}
-              />
-            )}
-
-            {activeTab === 'vi-to-eng' && viToEngResult && (
-              <ViToEngAnalysisResultView
-                data={viToEngResult}
-                isBookmarked={isCurrentBookmarked}
-                onToggleBookmark={toggleBookmarkCurrent}
-              />
-            )}
-
-            {activeTab === 'sentence-eng-to-vi' && sentenceEngToViResult && (
-              <SentenceEngToViResultView
-                data={sentenceEngToViResult}
-                isBookmarked={isCurrentBookmarked}
-                onToggleBookmark={toggleBookmarkCurrent}
-              />
-            )}
-
-            {activeTab === 'compare-eng-pali' && compareEngPaliResult && (
-              <CompareEngPaliResultView
-                data={compareEngPaliResult}
-                isBookmarked={isCurrentBookmarked}
-                onToggleBookmark={toggleBookmarkCurrent}
-              />
-            )}
-          </>
-        )}
-      </main>
-
-      {/* Footer (100% giữ nguyên nội dung văn bản theo yêu cầu) */}
-      <footer className="border-t border-stone-800/60 pt-5 pb-6 bg-[#0f1117] text-center mt-auto w-full">
-        <div className="max-w-7xl mx-auto px-4 space-y-1.5">
-          {/* Dòng 1: Màu xám sáng nhẹ, thanh thoát */}
-          <p className="text-xs sm:text-sm text-stone-400 font-sans tracking-wide">
-            Dự án đang cần kinh phí để nâng cấp và duy trì dung lượng tra cứu (token).
-          </p>
-
-          {/* Dòng 2: Lời kêu gọi kèm nút bấm liên kết nổi bật */}
-          <p className="text-xs sm:text-sm text-stone-300 font-sans flex items-center justify-center gap-1.5 flex-wrap">
-            <span>Tuỳ hỷ ủng hộ bấm vào đây --&gt;</span>
-            <button
-              onClick={() => setIsSupportModalOpen(true)}
-              className="text-amber-400 font-bold font-pali hover:underline hover:text-amber-300 cursor-pointer transition-all inline-flex items-center gap-1 focus:outline-none"
-              title="Mở mã QR ngân hàng ủng hộ tác giả"
-            >
-              <span>Thầy Đạt cute ^v^</span>
-            </button>
-          </p>
-        </div>
-      </footer>
-
-      {/* Support Modal (QR Ngân Hàng - id="support-modal") */}
-      <SupportModal
-        isOpen={isSupportModalOpen}
-        onClose={() => setIsSupportModalOpen(false)}
-      />
-
-      {/* Info Modal (Hình Của Thầy & Zalo - id="info-modal") */}
-      <InfoModal
-        isOpen={isInfoModalOpen}
-        onClose={() => setIsInfoModalOpen(false)}
-      />
-
-      {/* History Drawer */}
-      <HistoryDrawer
-        isOpen={isHistoryDrawerOpen}
-        onClose={() => setIsHistoryDrawerOpen(false)}
-        items={history}
-        onSelectItem={handleSelectHistoryItem}
-        onRemoveItem={(id) => saveHistory(history.filter((h) => h.id !== id))}
-        onClearAll={() => {
-          if (window.confirm('Xóa toàn bộ lịch sử?')) saveHistory([]);
-        }}
-        onToggleBookmark={(id) =>
-          saveHistory(
-            history.map((h) => (h.id === id ? { ...h, bookmarked: !h.bookmarked } : h))
-          )
-        }
-      />
-    </div>
-  );
-}
+                    <span

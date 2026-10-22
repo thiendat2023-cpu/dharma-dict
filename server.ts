@@ -132,6 +132,42 @@ QUY CHUẨN HỌC THUẬT BẮT BUỘC VỀ THUẬT NGỮ ANH VĂN PHẬT PHÁP 
 - Làm sáng tỏ sự chuyển biến ngữ nghĩa (semantic shifts) và những hạn chế của tiếng Anh khi chuyển ngữ từ văn ngôn kinh điển phương Đông.
 `;
 
+// =========================================================================
+// API BỘ ĐẾM & TRENDING SEARCHES (TOP 5) DÙNG REDIS VERCEL KV CHO APP ANH VĂN
+// =========================================================================
+app.get('/api/stats', async (req: Request, res: Response) => {
+  try {
+    if (isRedisEnabled && redis) {
+      // 1. Đọc số views và searches
+      const viewsStr = await redis.get('eng_buddhist_page_views');
+      const searchesStr = await redis.get('eng_buddhist_search_count');
+      
+      // 2. Tăng views ngầm (fire and forget)
+      redis.incr('eng_buddhist_page_views').catch(e => console.warn('Lỗi tăng views:', e));
+
+      // 3. Đọc Top 5 Trending Searches từ Sorted Set
+      // ZREVRANGE: lấy phần tử có điểm số từ cao xuống thấp (từ vị trí 0 đến 4 = top 5)
+      let trending: string[] = [];
+      try {
+        trending = await redis.zrevrange('eng_buddhist_trending_searches', 0, 4);
+      } catch (err) {
+        console.warn('Lỗi đọc trending:', err);
+      }
+
+      res.json({ 
+        views: viewsStr ? parseInt(viewsStr, 10) : 0, 
+        searches: searchesStr ? parseInt(searchesStr, 10) : 0,
+        trending: trending
+      });
+    } else {
+      res.json({ views: 'N/A', searches: 'N/A', trending: [] });
+    }
+  } catch (err) {
+    console.error('Lỗi lấy thông số:', err);
+    res.status(500).json({ error: 'Lỗi hệ thống' });
+  }
+});
+
 // Unified handler for Buddhist hub
 async function handleBuddhistHubRequest(req: Request, res: Response) {
   try {
@@ -216,260 +252,4 @@ Cột 'caseOrPerson' BẮT BUỘC ghi bằng TIẾNG VIỆT có số thứ tự:
           nuancesAndTraditions: { type: Type.STRING, description: 'Sắc thái dịch thuật qua lăng kính triết học Phật giáo' },
           markdownTable: { type: Type.STRING },
           tableData: wordTableSchema,
-          formattedMarkdown: { type: Type.STRING, description: 'Toàn văn phân tích định dạng Markdown chuẩn 4 ý' },
-        },
-        required: [
-          'analyzedWord',
-          'rootAndType',
-          'currentMorphology',
-          'directMeaning',
-          'markdownTable',
-          'tableData',
-          'formattedMarkdown',
-        ],
-      };
-
-      resultText = await generateWithFallback(
-        `Thuật ngữ tiếng Anh Phật giáo: "${cleanInput}"`,
-        systemInstruction,
-        responseSchema
-      );
-    }
-
-    // TAB 2: Tra từ Việt - Anh (Phật pháp)
-    else if (activeMode === 'vi-to-eng') {
-      const systemInstruction = `Bạn là chuyên gia hàng đầu về dịch thuật kinh điển Phật học song ngữ Việt - Anh. Khi người dùng nhập một thuật ngữ Phật học tiếng Việt (hoặc Hán - Việt), hãy tra cứu thuật ngữ tiếng Anh chuẩn xác nhất và phân tích gãy gọn theo 3 ý chính:
-
-${BUDDHIST_TERMINOLOGY_MANDATE}
-
-CẤU TRÚC 3 Ý PHÂN TÍCH:
-1. Thuật ngữ tiếng Anh chuẩn xác nhất: TUYỆT ĐỐI dùng thuật ngữ chuyên ngành kinh điển (ví dụ: "chánh niệm" -> "Mindfulness / Sati", "vô ngã" -> "Non-self / Anattā", "duyên khởi" -> "Dependent Origination / Paṭiccasamuppāda"), kèm từ Pāḷi/Sanskrit gốc. Cấm dùng từ ngữ thế tục.
-2. Phân tích từ loại, hình thái ngữ pháp tiếng Anh và các phương án dịch thuật của các dịch giả danh tiếng (Bhikkhu Bodhi, Pali Text Society, Thanissaro Bhikkhu, Edward Conze...).
-3. Bảng đối chiếu các cách dịch tiếng Anh theo từng ngữ cảnh/truyền thống học thuật.
-
-QUY TẮC CỘT TRONG BẢNG (tableData.rows):
-Cột 'caseOrPerson' BẮT BUỘC ghi bằng TIẾNG VIỆT có số thứ tự:
-1. Thuật ngữ thông dụng nhất trong kinh văn, 2. Bản dịch của Bhikkhu Bodhi, 3. Bản dịch của PTS (Pali Text Society), 4. Bản dịch của Edward Conze / Thiền học, 5. Thuật ngữ triết học phương Tây tương đương...`;
-
-      const responseSchema = {
-        type: Type.OBJECT,
-        properties: {
-          vietnameseWord: { type: Type.STRING },
-          analyzedWord: { type: Type.STRING, description: 'Thuật ngữ tiếng Anh chuẩn xác nhất' },
-          rootAndType: {
-            type: Type.OBJECT,
-            properties: {
-              root: { type: Type.STRING, description: 'Thuật ngữ Pāḷi/Sanskrit gốc' },
-              base: { type: Type.STRING, description: 'Dạng tiếng Anh cơ bản' },
-              wordType: { type: Type.STRING, description: 'Từ loại tiếng Anh' },
-              paliEquivalent: { type: Type.STRING, description: 'Thuật ngữ Pāḷi' },
-              genderOrClass: { type: Type.STRING },
-              etymologyNote: { type: Type.STRING, description: 'Phân tích căn nguyên triết học Phật giáo' },
-            },
-            required: ['root', 'base', 'wordType'],
-          },
-          currentMorphology: {
-            type: Type.OBJECT,
-            properties: {
-              classification: { type: Type.STRING },
-              englishTerm: { type: Type.STRING },
-              paliTerm: { type: Type.STRING },
-              number: { type: Type.STRING },
-              summary: { type: Type.STRING },
-              alternativeForms: { type: Type.ARRAY, items: { type: Type.STRING } },
-            },
-            required: ['classification', 'number', 'summary'],
-          },
-          directMeaning: { type: Type.STRING, description: 'Nghĩa tiếng Việt chuẩn Phật học' },
-          markdownTable: { type: Type.STRING },
-          tableData: wordTableSchema,
-          formattedMarkdown: { type: Type.STRING },
-        },
-        required: [
-          'vietnameseWord',
-          'analyzedWord',
-          'rootAndType',
-          'currentMorphology',
-          'markdownTable',
-          'tableData',
-          'formattedMarkdown',
-        ],
-      };
-
-      resultText = await generateWithFallback(
-        `Thuật ngữ tiếng Việt Phật pháp: "${cleanInput}"`,
-        systemInstruction,
-        responseSchema
-      );
-    }
-
-    // TAB 3: Phân tích & Dịch đoạn văn Anh - Việt
-    else if (activeMode === 'sentence-eng-to-vi') {
-      const systemInstruction = `Bạn là đại học giả phân tích cú pháp và dịch thuật Anh văn Phật học kinh điển (Buddhist Canon & Sutta Studies). 
-
-${BUDDHIST_TERMINOLOGY_MANDATE}
-
-BẮT BUỘC kết quả phân tích từng từ/cụm từ trong câu phải có đầy đủ 3 lớp dữ liệu:
-1. [Từ / Cụm từ tiếng Anh]: Từ/cụm từ trong câu (nguyên dạng đang phân tích).
-2. [Nghĩa tiếng Việt trực tiếp]: Dịch nghĩa tiếng Việt chuẩn xác và trực tiếp nhất của từ tại đúng ngữ cảnh câu kinh văn (ví dụ: "chánh niệm", "duyên khởi", "hành giả", "thuyết giảng", "đoạn trừ phiền não"... Tuyệt đối không dịch theo lối văn nói đời thường).
-3. [Giải phẫu ngữ pháp chi tiết]:
- - Ký hiệu viết tắt cú pháp: ví dụ (n, subj), (v, past-part), (adj, pred), (prep-phr), (rel-pron)...
- - Giải nghĩa chi tiết về chức năng cú pháp, liên hệ trực tiếp đến thuật ngữ Pāḷi/Sanskrit gốc nếu từ đó mang nội hàm giáo lý trọng tâm.
-Cuối cùng xuất ra: "=> [Bản dịch tiếng Việt mượt mà hoàn chỉnh của toàn đoạn, bảo đảm văn phong thanh tịnh, tôn nghiêm, chuẩn mực kinh tạng Phật giáo (tương đương văn phong HT. Thích Minh Châu)]".`;
-
-      const responseSchema = {
-        type: Type.OBJECT,
-        properties: {
-          originalSentence: { type: Type.STRING },
-          words: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                word: { type: Type.STRING, description: 'Từ / Cụm từ tiếng Anh trong câu' },
-                vietnameseMeaning: { type: Type.STRING, description: 'Nghĩa tiếng Việt trực tiếp chuẩn Phật học' },
-                abbreviation: { type: Type.STRING, description: 'Ký hiệu ngữ pháp tiếng Anh: (n, subj), (v, pres), (adj)...' },
-                detailedAnalysis: { type: Type.STRING, description: 'Giải phẫu ngữ pháp chi tiết và đối chiếu thuật ngữ Phật học Pāḷi' },
-              },
-              required: ['word', 'vietnameseMeaning', 'abbreviation', 'detailedAnalysis'],
-            },
-          },
-          smoothTranslation: { type: Type.STRING, description: 'Bản dịch tiếng Việt mượt mà hoàn chỉnh của toàn câu' },
-          rawOutput: { type: Type.STRING, description: 'Toàn văn định dạng đúng yêu cầu 3 lớp dữ liệu và => [Bản dịch tiếng Việt mượt mà]' },
-        },
-        required: ['originalSentence', 'words', 'smoothTranslation', 'rawOutput'],
-      };
-
-      resultText = await generateWithFallback(
-        `Đoạn văn tiếng Anh Phật học: "${cleanInput}"`,
-        systemInstruction,
-        responseSchema
-      );
-    }
-
-    // TAB 4: So sánh thuật ngữ (Anh - Pāḷi)
-    else if (activeMode === 'compare-eng-pali') {
-      const systemInstruction = `Bạn là nhà ngữ văn học đối chiếu Phật giáo chuyên sâu (Pāli Philology & English Translation Studies). Hãy so sánh sâu sắc giữa thuật ngữ tiếng Anh và nguyên tác Pāḷi (kèm thuật ngữ Hán - Việt tương ứng):
-
-${BUDDHIST_TERMINOLOGY_MANDATE}
-
-NỘI DUNG ĐỐI CHIẾU BẮT BUỘC:
-1. Phân tích nguyên ngữ Pāḷi: ngữ căn (root), tiền tố, tiếp vĩ ngữ, ý nghĩa gốc trong Tam tạng Pāḷi (Tipiṭaka).
-2. Cách các đại học giả phương Tây (T.W. Rhys Davids, Bhikkhu Bodhi, I.B. Horner, Nyanatiloka, Thanissaro Bhikkhu...) dịch sang tiếng Anh.
-3. So sánh ngữ nghĩa (Semantic comparison): Thuật ngữ tiếng Anh lột tả được khía cạnh nào và làm lu mờ hoặc sai lệch (semantic loss/distortion) khía cạnh triết học nào so với Pāḷi gốc (ví dụ: Dukkha dịch là "Suffering" thường bị hiểu hẹp theo tâm lý học thế tục mà mất đi tầng nghĩa "bất toàn, biến hoại của các hành hữu vi"; Sati dịch là "Mindfulness" đôi khi bị tách rời khỏi Chánh định và Chánh kiến trong Bát Chánh Đạo).
-4. Bảng các điểm so sánh chính (comparisonPoints).
-5. Trích dẫn câu kinh văn điển hình song ngữ (Pāḷi - Anh - Việt) minh họa.`;
-
-      const responseSchema = {
-        type: Type.OBJECT,
-        properties: {
-          englishTerm: { type: Type.STRING, description: 'Thuật ngữ tiếng Anh' },
-          paliTerm: { type: Type.STRING, description: 'Thuật ngữ Pāḷi' },
-          sanskritTerm: { type: Type.STRING, description: 'Thuật ngữ Phạn (Sanskrit) tương ứng' },
-          vietnameseTerm: { type: Type.STRING, description: 'Thuật ngữ Hán - Việt tương ứng' },
-          paliEtymology: { type: Type.STRING, description: 'Ngữ căn & cấu tạo từ Pāḷi' },
-          scholarlyTranslations: { type: Type.STRING, description: 'Các phương án dịch tiếng Anh của học giả uy tín' },
-          semanticComparison: { type: Type.STRING, description: 'Phân tích đối chiếu ngữ nghĩa sâu sắc' },
-          comparisonPoints: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                aspect: { type: Type.STRING, description: 'Khía cạnh so sánh' },
-                paliPerspective: { type: Type.STRING, description: 'Góc nhìn Pāḷi gốc' },
-                englishPerspective: { type: Type.STRING, description: 'Góc nhìn bản dịch tiếng Anh' },
-                analysis: { type: Type.STRING, description: 'Nhận định học thuật & sắc thái' },
-              },
-              required: ['aspect', 'paliPerspective', 'englishPerspective', 'analysis'],
-            },
-          },
-          classicalQuotes: { type: Type.STRING, description: 'Trích dẫn kinh văn mẫu song ngữ' },
-          rawOutput: { type: Type.STRING, description: 'Toàn bộ bài phân tích đối chiếu định dạng Markdown' },
-        },
-        required: [
-          'englishTerm',
-          'paliTerm',
-          'vietnameseTerm',
-          'paliEtymology',
-          'semanticComparison',
-          'rawOutput',
-        ],
-      };
-
-      resultText = await generateWithFallback(
-        `Thuật ngữ cần so sánh Anh - Pāḷi: "${cleanInput}"`,
-        systemInstruction,
-        responseSchema
-      );
-    }
-
-    else {
-      res.status(400).json({ error: `Chế độ không hợp lệ: ${mode}` });
-      return;
-    }
-
-    const finalData = JSON.parse(resultText);
-
-    // LƯU KẾT QUẢ VÀO KHO
-    if (isRedisEnabled && redis) {
-      try {
-        await redis.set(cacheKey, JSON.stringify(finalData));
-      } catch (e) {
-        console.warn('Lỗi lưu kho:', e);
-      }
-    }
-
-    res.json({ mode: activeMode, data: finalData });
-
-  } catch (err: any) {
-    console.error('Lỗi API buddhist-hub:', err);
-    res.status(500).json({ error: 'Lỗi khi xử lý: ' + (err?.message || 'Lỗi nội bộ.') });
-  }
-}
-
-app.post('/api/buddhist-hub', handleBuddhistHubRequest);
-app.post('/api/pali-hub', handleBuddhistHubRequest);
-
-app.post('/api/analyze-pali', async (req: Request, res: Response) => {
-  try {
-    const { word } = req.body;
-    if (!word) {
-      res.status(400).json({ error: 'Thiếu từ cần tra.' });
-      return;
-    }
-    const response = await fetch(`http://localhost:${port}/api/buddhist-hub`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'eng-to-vi', input: word }),
-    });
-    const result = await response.json();
-    if (result.data) {
-      res.json({
-        ...result.data,
-        fourPointsFormattedMarkdown: result.data.formattedMarkdown,
-      });
-    } else {
-      res.status(500).json(result);
-    }
-  } catch (e: any) {
-    res.status(500).json({ error: e?.message });
-  }
-});
-
-if (process.env.NODE_ENV !== 'production') {
-  const { createServer } = await import('vite');
-  const vite = await createServer({
-    server: { middlewareMode: true },
-    appType: 'spa',
-  });
-  app.use(vite.middlewares);
-} else {
-  app.use(express.static(path.resolve(__dirname, 'dist')));
-  app.get('*', (_req: Request, res: Response) => {
-    res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
-  });
-}
-
-app.listen(port, () => {
-  console.log(`Server Tra Cứu Anh Văn Phật Pháp running on port ${port}`);
-});
+          formattedMarkdown: { type: Type.STRING, description: '

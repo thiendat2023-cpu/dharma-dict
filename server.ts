@@ -86,27 +86,24 @@ async function generateWithFallback(
   throw lastError || new Error('Không thể kết nối đến hệ thống AI.');
 }
 
-// Word Analysis Table Schema (Dùng trong Mode 1 & 2)
+// Word Analysis Table Schema
 const wordTableSchema = {
   type: Type.OBJECT,
   properties: {
     title: { type: Type.STRING, description: 'Tiêu đề bảng họ từ và ngữ pháp' },
-    paradigmType: { type: Type.STRING, description: 'Phân loại từ loại (Danh từ / Động từ / Tính từ / Họ từ)' },
+    paradigmType: { type: Type.STRING, description: 'Phân loại từ loại' },
     rows: {
       type: Type.ARRAY,
       items: {
         type: Type.OBJECT,
         properties: {
-          caseOrPerson: {
-            type: Type.STRING,
-            description: 'Từ loại / Dạng thức BẰNG TIẾNG VIỆT có số thứ tự: 1. Danh từ trừu tượng (Abstract Noun), 2. Tính từ (Adjective), 3. Động từ (Verb), 4. Trạng từ (Adverb)...',
-          },
+          caseOrPerson: { type: Type.STRING, description: 'Từ loại / Dạng thức' },
           singularForm: { type: Type.STRING, description: 'Dạng thức tiếng Anh' },
           singularMeaning: { type: Type.STRING, description: 'Nghĩa tiếng Việt tương ứng' },
-          pluralForm: { type: Type.STRING, description: 'Thuật ngữ Pāḷi / Biến thể từ loại' },
-          pluralMeaning: { type: Type.STRING, description: 'Ghi chú ngữ cảnh Phật học' },
-          isCurrentSingular: { type: Type.BOOLEAN, description: 'True nếu trùng khớp từ đang tra' },
-          isCurrentPlural: { type: Type.BOOLEAN, description: 'True nếu trùng khớp dạng biến thể' },
+          pluralForm: { type: Type.STRING, description: 'Thuật ngữ Pāḷi' },
+          pluralMeaning: { type: Type.STRING, description: 'Ghi chú ngữ cảnh' },
+          isCurrentSingular: { type: Type.BOOLEAN },
+          isCurrentPlural: { type: Type.BOOLEAN },
         },
         required: ['caseOrPerson', 'singularForm', 'singularMeaning', 'pluralForm', 'pluralMeaning'],
       },
@@ -115,38 +112,21 @@ const wordTableSchema = {
   required: ['title', 'rows'],
 };
 
-// =========================================================================
-// RÀNG BUỘC CỰC KỲ NGHIÊM NGẶT VỀ THUẬT NGỮ PHẬT HỌC CHUYÊN NGÀNH
-// =========================================================================
 const BUDDHIST_TERMINOLOGY_MANDATE = `
-QUY CHUẨN HỌC THUẬT BẮT BUỘC VỀ THUẬT NGỮ ANH VĂN PHẬT PHÁP (BUDDHIST TERMINOLOGY MANDATE):
-1. TUYỆT ĐỐI CHUẨN HOÁ THEO KINH ĐIỂN VÀ CÁC ĐẠI HỌC GIẢ DANH TIẾNG:
-- BẮT BUỘC sử dụng hệ thống thuật ngữ Phật học quốc tế được chuẩn hoá bởi các hội dịch thuật và học giả uy tín: Pali Text Society (PTS - T.W. Rhys Davids, I.B. Horner), Ven. Bhikkhu Bodhi, Ven. Nyanatiloka (Buddhist Dictionary), Ven. Thanissaro Bhikkhu, Edward Conze, Wisdom Publications.
-- TUYỆT ĐỐI CẤM sử dụng tiếng Anh giao tiếp thông thường, khẩu ngữ đời thường hoặc giải nghĩa sơ sài theo lối thế tục.
-  * NGHIÊM CẤM: "Good path", "Origin of everything", "Bad feelings", "Bad karma", "Thinking about breath", "Peaceful mind", "Real thing", "No self-existence".
-  * BẮT BUỘC SỬ DỤNG: "Noble Eightfold Path" (Ariya Aṭṭhaṅgika Magga), "Dependent Origination / Conditioned Genesis" (Paṭiccasamuppāda), "Mental Defilements / Afflictions / Taints" (Kilesa / Āsava), "Volitional Formations / Fabrications" (Saṅkhāra), "Mindfulness & Clear Comprehension" (Sati-sampajañña), "Tranquillity and Insight" (Samatha & Vipassanā), "Cessation of Suffering" (Dukkha-nirodha), "Stream-enterer" (Sotāpanna), "Once-returner" (Sakadāgāmī), "Non-returner" (Anāgāmī), "Arahantship" (Arahatta), "Unconditioned Element" (Asaṅkhatā-dhātu).
-
-2. LĂNG KÍNH TRIẾT HỌC PHẬT GIÁO & ĐỐI CHIẾU CHÉO NGUỒN GỐC PĀḶI/SANSKRIT:
-- Mọi định nghĩa và phân tích BẮT BUỘC phải soi chiếu qua lăng kính triết học Phật học: Duyên khởi (Paṭiccasamuppāda), Tam tướng (Anicca - Dukkha - Anattā), Tứ diệu đế (Cattāri Ariyasaccāni), và Vi diệu pháp (Abhidhamma).
-- Bắt buộc đối chiếu chéo sắc thái nghĩa của từ tiếng Anh với ngữ căn (root), tiền tố (prefix), tiếp vĩ ngữ (suffix) trong Pāḷi/Sanskrit để bảo chứng độ chính xác học thuật tuyệt đối.
-- Làm sáng tỏ sự chuyển biến ngữ nghĩa (semantic shifts) và những hạn chế của tiếng Anh khi chuyển ngữ từ văn ngôn kinh điển phương Đông.
+QUY CHUẨN HỌC THUẬT BẮT BUỘC VỀ THUẬT NGỮ ANH VĂN PHẬT PHÁP:
+- Sử dụng chuẩn quốc tế: Pali Text Society (PTS), Bhikkhu Bodhi, Nyanatiloka, Thanissaro Bhikkhu.
+- Tuyệt đối không dùng tiếng Anh giao tiếp thế tục, bám sát kinh tạng.
 `;
 
 // =========================================================================
-// API BỘ ĐẾM & TRENDING SEARCHES (TOP 5) DÙNG REDIS VERCEL KV CHO APP ANH VĂN
+// API BỘ ĐẾM & TRENDING SEARCHES (APP ANH VĂN)
 // =========================================================================
 app.get('/api/stats', async (req: Request, res: Response) => {
   try {
     if (isRedisEnabled && redis) {
-      // 1. Đọc số views và searches
-      const viewsStr = await redis.get('eng_buddhist_page_views');
+      const currentViews = await redis.incr('eng_buddhist_page_views');
       const searchesStr = await redis.get('eng_buddhist_search_count');
-      
-      // 2. Tăng views ngầm (fire and forget)
-      redis.incr('eng_buddhist_page_views').catch(e => console.warn('Lỗi tăng views:', e));
 
-      // 3. Đọc Top 5 Trending Searches từ Sorted Set
-      // ZREVRANGE: lấy phần tử có điểm số từ cao xuống thấp (từ vị trí 0 đến 4 = top 5)
       let trending: string[] = [];
       try {
         trending = await redis.zrevrange('eng_buddhist_trending_searches', 0, 4);
@@ -155,12 +135,12 @@ app.get('/api/stats', async (req: Request, res: Response) => {
       }
 
       res.json({ 
-        views: viewsStr ? parseInt(viewsStr, 10) : 0, 
+        views: currentViews || 0, 
         searches: searchesStr ? parseInt(searchesStr, 10) : 0,
         trending: trending
       });
     } else {
-      res.json({ views: 'N/A', searches: 'N/A', trending: [] });
+      res.json({ views: 0, searches: 0, trending: [] });
     }
   } catch (err) {
     console.error('Lỗi lấy thông số:', err);
@@ -169,7 +149,7 @@ app.get('/api/stats', async (req: Request, res: Response) => {
 });
 
 // Unified handler for Buddhist hub
-async function handleBuddhistHubRequest(req: Request, res: Response) {
+app.post('/api/buddhist-hub', async (req: Request, res: Response) => {
   try {
     const { mode, input } = req.body;
 
@@ -179,46 +159,32 @@ async function handleBuddhistHubRequest(req: Request, res: Response) {
     }
 
     const cleanInput = input.trim();
+    const cacheKey = `eng_${mode}_${cleanInput.toLowerCase()}`;
 
-    let activeMode = mode;
-    if (activeMode === 'pali-to-vi') activeMode = 'eng-to-vi';
-    else if (activeMode === 'vi-to-pali') activeMode = 'vi-to-eng';
-    else if (activeMode === 'sentence-pali-to-vi') activeMode = 'sentence-eng-to-vi';
-    else if (activeMode === 'sentence-vi-to-pali') activeMode = 'compare-eng-pali';
-
-    const cacheKey = `eng_${activeMode}_${cleanInput.toLowerCase()}`;
-
-    // ĐỌC DỮ LIỆU TỪ KHO (NẾU CÓ)
+    // ĐỌC DỮ LIỆU TỪ KHO CACHE
     if (isRedisEnabled && redis) {
       try {
         const cachedDataStr = await redis.get(cacheKey);
         if (cachedDataStr) {
           console.log('⚡ Đã lấy từ kho lưu trữ 0 đồng:', cacheKey);
-          res.json({ mode: activeMode, data: JSON.parse(cachedDataStr) });
+
+          await redis.incr('eng_buddhist_search_count');
+          if (cleanInput.length <= 40) {
+            await redis.zincrby('eng_buddhist_trending_searches', 1, cleanInput.toLowerCase());
+          }
+
+          res.json({ mode, data: JSON.parse(cachedDataStr) });
           return;
         }
       } catch (e) {
-        console.warn('Lỗi đọc kho (vẫn tiếp tục gọi AI):', e);
+        console.warn('Lỗi đọc kho:', e);
       }
     }
 
     let resultText = '';
 
-    // TAB 1: Tra từ Anh - Việt (Phật pháp)
-    if (activeMode === 'eng-to-vi') {
-      const systemInstruction = `Bạn là đại học giả uyên bác về Ngôn ngữ Anh Phật học (Buddhist English Philology) và Phạn - Pāḷi học. Khi người dùng nhập một thuật ngữ hoặc từ tiếng Anh Phật giáo, hãy phân tích cực kỳ gãy gọn, chuẩn xác và mang tầm vóc học thuật kinh viện theo 4 ý chính:
-
-${BUDDHIST_TERMINOLOGY_MANDATE}
-
-CẤU TRÚC 4 Ý PHÂN TÍCH:
-1. Từ gốc & Từ loại: Gốc từ tiếng Anh/La-tinh, từ loại tiếng Anh, thuật ngữ Pāḷi/Sanskrit tương đương chuẩn xác nhất (kèm ngữ căn).
-2. Hình thái & Ngữ pháp: Dạng danh từ trừu tượng, tính từ, động từ, số ít/số nhiều, họ từ chuyên ngành Phật học (Buddhist Word Family).
-3. Nghĩa Phật học trực tiếp & Sắc thái dịch thuật: Nghĩa tiếng Việt chuẩn xác nhất theo các bậc đại dịch giả kinh điển (HT. Thích Minh Châu, HT. Thích Trí Siêu, Bhikkhu Bodhi, PTS); phân biệt rõ sắc thái Theravāda hoặc Mahāyāna dưới góc nhìn giáo lý.
-4. Bảng phân tích họ từ (Word Family & Paradigm: Noun, Adjective, Verb, Adverb, hoặc thuật ngữ Pāḷi/Sanskrit đối ứng).
-
-QUY TẮC CỘT TRONG BẢNG (tableData.rows):
-Cột 'caseOrPerson' BẮT BUỘC ghi bằng TIẾNG VIỆT có số thứ tự:
-1. Danh từ chính (Noun), 2. Tính từ (Adjective), 3. Động từ liên hệ (Verb), 4. Trạng từ (Adverb), 5. Thuật ngữ Pāḷi đối ứng (Pāli Term)...`;
+    if (mode === 'eng-to-vi') {
+      const systemInstruction = `Bạn là học giả uyên bác về Ngôn ngữ Anh Phật học và Pāḷi học. Phân tích thuật ngữ tiếng Anh Phật giáo theo 4 ý: 1. Từ gốc & Từ loại, 2. Hình thái & Ngữ pháp, 3. Nghĩa Phật học trực tiếp, 4. Bảng phân tích họ từ (tableData). ${BUDDHIST_TERMINOLOGY_MANDATE}`;
 
       const responseSchema = {
         type: Type.OBJECT,
@@ -227,29 +193,183 @@ Cột 'caseOrPerson' BẮT BUỘC ghi bằng TIẾNG VIỆT có số thứ tự:
           rootAndType: {
             type: Type.OBJECT,
             properties: {
-              root: { type: Type.STRING, description: 'Từ gốc / Etymology chuyên ngành' },
-              base: { type: Type.STRING, description: 'Dạng từ nguyên mẫu' },
-              wordType: { type: Type.STRING, description: 'Từ loại tiếng Anh học thuật' },
-              paliEquivalent: { type: Type.STRING, description: 'Thuật ngữ Pāḷi tương đương' },
+              root: { type: Type.STRING },
+              base: { type: Type.STRING },
+              wordType: { type: Type.STRING },
+              paliEquivalent: { type: Type.STRING },
               genderOrClass: { type: Type.STRING },
-              etymologyNote: { type: Type.STRING, description: 'Ghi chú từ nguyên & ngữ cảnh giáo lý sâu sắc' },
+              etymologyNote: { type: Type.STRING },
             },
             required: ['root', 'base', 'wordType'],
           },
           currentMorphology: {
             type: Type.OBJECT,
             properties: {
-              classification: { type: Type.STRING, description: 'Phân loại từ loại chi tiết' },
+              classification: { type: Type.STRING },
               englishTerm: { type: Type.STRING },
               paliTerm: { type: Type.STRING },
-              number: { type: Type.STRING, description: 'Hình thái (Singular/Plural/Uncountable)' },
-              summary: { type: Type.STRING, description: 'Tóm lược ngữ pháp' },
+              number: { type: Type.STRING },
+              summary: { type: Type.STRING },
               alternativeForms: { type: Type.ARRAY, items: { type: Type.STRING } },
             },
             required: ['classification', 'number', 'summary'],
           },
-          directMeaning: { type: Type.STRING, description: 'Nghĩa Phật học trực tiếp tiếng Việt chuẩn kinh viện' },
-          nuancesAndTraditions: { type: Type.STRING, description: 'Sắc thái dịch thuật qua lăng kính triết học Phật giáo' },
+          directMeaning: { type: Type.STRING },
+          nuancesAndTraditions: { type: Type.STRING },
           markdownTable: { type: Type.STRING },
           tableData: wordTableSchema,
-          formattedMarkdown: { type: Type.STRING, description: '
+          formattedMarkdown: { type: Type.STRING },
+        },
+        required: ['analyzedWord', 'rootAndType', 'currentMorphology', 'directMeaning', 'markdownTable', 'tableData', 'formattedMarkdown'],
+      };
+
+      resultText = await generateWithFallback(`Thuật ngữ tiếng Anh Phật giáo: "${cleanInput}"`, systemInstruction, responseSchema);
+    } 
+    else if (mode === 'vi-to-eng') {
+      const systemInstruction = `Chuyên gia dịch thuật kinh điển Phật học Việt - Anh. Phân tích 3 ý: 1. Thuật ngữ tiếng Anh chuẩn, 2. Phân tích phương án dịch, 3. Bảng đối chiếu. ${BUDDHIST_TERMINOLOGY_MANDATE}`;
+
+      const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+          vietnameseWord: { type: Type.STRING },
+          analyzedWord: { type: Type.STRING },
+          rootAndType: {
+            type: Type.OBJECT,
+            properties: {
+              root: { type: Type.STRING },
+              base: { type: Type.STRING },
+              wordType: { type: Type.STRING },
+              paliEquivalent: { type: Type.STRING },
+              genderOrClass: { type: Type.STRING },
+              etymologyNote: { type: Type.STRING },
+            },
+            required: ['root', 'base', 'wordType'],
+          },
+          currentMorphology: {
+            type: Type.OBJECT,
+            properties: {
+              classification: { type: Type.STRING },
+              englishTerm: { type: Type.STRING },
+              paliTerm: { type: Type.STRING },
+              number: { type: Type.STRING },
+              summary: { type: Type.STRING },
+              alternativeForms: { type: Type.ARRAY, items: { type: Type.STRING } },
+            },
+            required: ['classification', 'number', 'summary'],
+          },
+          directMeaning: { type: Type.STRING },
+          markdownTable: { type: Type.STRING },
+          tableData: wordTableSchema,
+          formattedMarkdown: { type: Type.STRING },
+        },
+        required: ['vietnameseWord', 'analyzedWord', 'rootAndType', 'currentMorphology', 'markdownTable', 'tableData', 'formattedMarkdown'],
+      };
+
+      resultText = await generateWithFallback(`Thuật ngữ tiếng Việt Phật pháp: "${cleanInput}"`, systemInstruction, responseSchema);
+    } 
+    else if (mode === 'sentence-eng-to-vi') {
+      const systemInstruction = `Phân tích cú pháp và dịch đoạn văn Anh văn Phật học kinh điển. Trả về cấu trúc 3 lớp dữ liệu cho từng từ và bản dịch mượt mà.`;
+
+      const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+          originalSentence: { type: Type.STRING },
+          words: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                word: { type: Type.STRING },
+                vietnameseMeaning: { type: Type.STRING },
+                abbreviation: { type: Type.STRING },
+                detailedAnalysis: { type: Type.STRING },
+              },
+              required: ['word', 'vietnameseMeaning', 'abbreviation', 'detailedAnalysis'],
+            },
+          },
+          smoothTranslation: { type: Type.STRING },
+          rawOutput: { type: Type.STRING },
+        },
+        required: ['originalSentence', 'words', 'smoothTranslation', 'rawOutput'],
+      };
+
+      resultText = await generateWithFallback(`Đoạn văn tiếng Anh Phật học: "${cleanInput}"`, systemInstruction, responseSchema);
+    } 
+    else if (mode === 'compare-eng-pali') {
+      const systemInstruction = `Đối chiếu sâu sắc giữa thuật ngữ tiếng Anh và nguyên tác Pāḷi. Trả về cấu trúc so sánh học thuật.`;
+
+      const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+          englishTerm: { type: Type.STRING },
+          paliTerm: { type: Type.STRING },
+          sanskritTerm: { type: Type.STRING },
+          vietnameseTerm: { type: Type.STRING },
+          paliEtymology: { type: Type.STRING },
+          scholarlyTranslations: { type: Type.STRING },
+          semanticComparison: { type: Type.STRING },
+          comparisonPoints: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                aspect: { type: Type.STRING },
+                paliPerspective: { type: Type.STRING },
+                englishPerspective: { type: Type.STRING },
+                analysis: { type: Type.STRING },
+              },
+              required: ['aspect', 'paliPerspective', 'englishPerspective', 'analysis'],
+            },
+          },
+          classicalQuotes: { type: Type.STRING },
+          rawOutput: { type: Type.STRING },
+        },
+        required: ['englishTerm', 'paliTerm', 'vietnameseTerm', 'paliEtymology', 'semanticComparison', 'rawOutput'],
+      };
+
+      resultText = await generateWithFallback(`Thuật ngữ cần so sánh Anh - Pāḷi: "${cleanInput}"`, systemInstruction, responseSchema);
+    } 
+    else {
+      res.status(400).json({ error: `Chế độ không hợp lệ: ${mode}` });
+      return;
+    }
+
+    const finalData = JSON.parse(resultText);
+
+    if (isRedisEnabled && redis) {
+      try {
+        await redis.set(cacheKey, JSON.stringify(finalData));
+        await redis.incr('eng_buddhist_search_count');
+        if (cleanInput.length <= 40) {
+          await redis.zincrby('eng_buddhist_trending_searches', 1, cleanInput.toLowerCase());
+        }
+      } catch (e) {
+        console.warn('Lỗi lưu kho:', e);
+      }
+    }
+
+    res.json({ mode, data: finalData });
+
+  } catch (err: any) {
+    console.error('Lỗi API buddhist-hub:', err);
+    res.status(500).json({ error: 'Lỗi khi xử lý: ' + (err?.message || 'Lỗi nội bộ.') });
+  }
+});
+
+if (process.env.NODE_ENV !== 'production') {
+  const { createServer } = await import('vite');
+  const vite = await createServer({
+    server: { middlewareMode: true },
+    appType: 'spa',
+  });
+  app.use(vite.middlewares);
+} else {
+  app.use(express.static(path.resolve(__dirname, 'dist')));
+  app.get('*', (_req: Request, res: Response) => {
+    res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
+  });
+}
+
+app.listen(port, () => {
+  console.log(`Server Tra Cứu Anh Văn Phật Pháp running on port ${port}`);
+});
